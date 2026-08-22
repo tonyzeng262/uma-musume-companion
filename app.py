@@ -14,6 +14,8 @@ import streamlit as st
 
 import db
 import roster
+import views_grandlive
+import views_import
 from optimizer import (
     DEFAULT_CATEGORIES,
     GRADES,
@@ -128,9 +130,20 @@ categories = tuple(
     for c in DEFAULT_CATEGORIES
 )
 
-st.title("Team Trials team builder")
+st.title("Uma Musume companion")
 
-tab_team, tab_roster, tab_browse = st.tabs(["Optimize", "My umas", "Tierlist"])
+tab_team, tab_roster, tab_browse, tab_run, tab_songs, tab_guide = st.tabs(
+    ["Optimize", "My umas", "Tierlist", "Grand Live run", "Song values", "Guide"]
+)
+
+with tab_run:
+    views_grandlive.render_run(conn)
+
+with tab_songs:
+    views_grandlive.render_songs(conn)
+
+with tab_guide:
+    views_grandlive.render_guide(conn)
 
 
 # --- roster ---------------------------------------------------------------
@@ -160,6 +173,9 @@ with tab_roster:
             st.rerun()
     with col_b:
         st.caption(f"{len(picked)} selected - you need at least 15 to fill a team.")
+
+    with st.expander("Import from screenshots"):
+        views_import.render(conn)
 
     with st.expander("Bulk add by name (one per line)"):
         blob = st.text_area("Names", height=140, label_visibility="collapsed")
