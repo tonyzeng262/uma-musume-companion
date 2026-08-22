@@ -17,6 +17,34 @@ On this machine Python is not on PATH — use the full interpreter path:
 "C:/Users/tonyz/AppData/Local/Python/bin/python.exe" -m streamlit run app.py
 ```
 
+## Deploying to Streamlit Community Cloud
+
+1. Go to [share.streamlit.io](https://share.streamlit.io) and sign in with GitHub.
+2. **Create app** → **Deploy a public app from GitHub**.
+3. Repository `tonyzeng262/uma-musume-companion`, branch `main`,
+   main file path `app.py`.
+4. Deploy. The first load takes an extra 10–20 seconds while it builds the
+   card database, then it behaves like the local copy.
+
+`uma.db` is not committed — it is derived data, and a binary blob in git goes
+stale silently. `bootstrap.py` rebuilds it from tracentrial.org and gametora.com
+whenever the reference tables are missing, which is exactly what a fresh
+container looks like. Reference portraits download on demand from the
+*My umas* tab.
+
+### The one real limitation
+
+Streamlit Community Cloud gives every app a **throwaway filesystem**. It is
+wiped when the app sleeps (after a few days idle) and on every redeploy. Card
+data rebuilds itself, but **your roster and any Grand Live run in progress do
+not survive** — they live in the same SQLite file. The app shows a warning in
+the sidebar when it detects it is running hosted.
+
+If that becomes annoying, the fix is to move the four user tables (`roster`,
+`roster_aptitude_override`, `grand_live_run`, `grand_live_history`) onto a
+hosted database — Turso/libSQL works well and `db.connect()` is the only place
+that would need to change.
+
 ## Tabs
 
 | tab | what it does |
