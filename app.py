@@ -5,13 +5,11 @@ Run:  python -m streamlit run app.py
 
 from __future__ import annotations
 
-import subprocess
-import sys
-from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
+import bootstrap
 import db
 import roster
 import views_grandlive
@@ -68,9 +66,24 @@ conn = get_conn()
 
 with st.sidebar:
     st.header("Data")
-    if not db.has_reference_data(conn):
-        st.error("No card data yet. Run `python ingest.py` first.")
-        st.stop()
+    if bootstrap.needs_reference_data(conn) or bootstrap.needs_guide(conn):
+        # A hosted container starts from the repo alone, with no uma.db. Build
+        # it rather than showing an error nobody can act on from a browser.
+        lines: list[str] = []
+        status = st.status("Building the card database (10-20s)...", expanded=True)
+        try:
+            with status:
+                bootstrap.build_all(log=lambda m: (lines.append(str(m)), st.write(str(m)))[0])
+            status.update(label="Database ready.", state="complete", expanded=False)
+        except Exception as exc:
+            status.update(label="Could not build the database.", state="error")
+            st.error(
+                f"{exc}\n\nThe app needs outbound access to tracentrial.org and "
+                "gametora.com. Locally you can run `python ingest.py` instead."
+            )
+            st.stop()
+        conn = get_conn()
+        st.rerun()
 
     counts = conn.execute(
         "SELECT count(*) AS cards, sum(released_global) AS glob,"
@@ -83,14 +96,20 @@ with st.sidebar:
     )
     if st.button("Refresh from tracentrial + GameTora", width="stretch"):
         with st.spinner("Fetching..."):
-            proc = subprocess.run(
-                [sys.executable, str(Path(__file__).parent / "ingest.py")],
-                capture_output=True, text=True,
-            )
-        (st.success if proc.returncode == 0 else st.error)(
-            proc.stdout[-800:] or proc.stderr[-800:]
-        )
+            try:
+                bootstrap.build_all(log=lambda m: None)
+                st.success("Refreshed. Your roster and run were not touched.")
+            except Exception as exc:
+                st.error(f"Refresh failed: {exc}")
         st.rerun()
+
+    if bootstrap.is_hosted():
+        st.warning(
+            "**Hosted copy.** This container's disk is wiped whenever the app "
+            "sleeps or redeploys, so your roster and any Grand Live run in "
+            "progress will reset. Card data rebuilds itself automatically.",
+            icon="⚠️",
+        )
 
     st.divider()
     st.header("Scoring")

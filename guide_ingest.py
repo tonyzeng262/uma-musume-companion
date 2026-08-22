@@ -199,42 +199,42 @@ def to_float(net: str) -> float | None:
         return None
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description="Import the tracentrial guide text.")
-    ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--dump", metavar="PATH", help="also write the parsed guide as JSON")
-    args = ap.parse_args()
+def build(dry_run: bool = False, dump: str | None = None, log=print) -> dict:
+    """Parse the live bundle and load the guide tables.
 
+    Importable so the app can bootstrap itself on a fresh container.
+    """
     url, src = fetch_bundle()
-    print(f"bundle {url} ({len(src):,} chars)")
+    log(f"bundle {url} ({len(src):,} chars)")
 
     tables = parse_song_values(src)
     lives = parse_live_blocks(src)
     sections = parse_sections(src)
 
-    print(f"  {len(tables)} song-value tables: {[len(t) for t in tables]}")
-    print(f"  {len(lives)} Live blocks")
-    print(f"  {len(sections)} guide sections")
+    log(f"  {len(tables)} song-value tables: {[len(t) for t in tables]}")
+    log(f"  {len(lives)} Live blocks")
+    log(f"  {len(sections)} guide sections")
 
     if not tables or not lives or not sections:
-        print("\n! the bundle layout changed -- nothing recognisable was found")
-        return 1
+        raise RuntimeError(
+            "the tracentrial bundle layout changed -- nothing recognisable was found"
+        )
 
     empty = [s["title"] for s in sections if not s["body"]]
     if empty:
-        print(f"  ! {len(empty)} sections parsed with no body: {empty[:4]}")
+        log(f"  ! {len(empty)} sections parsed with no body: {empty[:4]}")
 
-    if args.dump:
-        with open(args.dump, "w", encoding="utf-8") as fh:
+    if dump:
+        with open(dump, "w", encoding="utf-8") as fh:
             json.dump(
                 {"tables": tables, "lives": lives, "sections": sections}, fh,
                 ensure_ascii=False, indent=1,
             )
-        print(f"  dumped to {args.dump}")
+        log(f"  dumped to {dump}")
 
-    if args.dry_run:
-        print("\n--dry-run: nothing written")
-        return 0
+    if dry_run:
+        log("--dry-run: nothing written")
+        return {"sections": len(sections), "lives": len(lives)}
 
     conn = db.connect()
     with conn:

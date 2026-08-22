@@ -183,37 +183,45 @@ def build_skill_rows(skills: list[dict]) -> list[tuple]:
     ]
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description="Rebuild the uma reference database.")
-    ap.add_argument("--dry-run", action="store_true", help="fetch and report, write nothing")
-    args = ap.parse_args()
+def build(dry_run: bool = False, log=print) -> dict:
+    """Fetch both sources and rebuild the reference tables.
 
-    print("fetching tracentrial tierlist ...", flush=True)
+    Importable so the app can bootstrap itself on a fresh container, where
+    there is no uma.db yet (Streamlit Cloud starts from the repo only).
+    """
+    log("fetching tracentrial tierlist ...")
     umas = tracentrial("manageUma", "list")["umas"]
-    print(f"  {len(umas)} tierlist entries")
+    log(f"  {len(umas)} tierlist entries")
 
-    print("fetching tracentrial skills ...", flush=True)
+    log("fetching tracentrial skills ...")
     skills = tracentrial("manageSkill", "list")["skills"]
-    print(f"  {len(skills)} skills")
+    log(f"  {len(skills)} skills")
 
-    print("fetching GameTora character cards ...", flush=True)
+    log("fetching GameTora character cards ...")
     cards = gametora("character-cards")
-    print(f"  {len(cards)} cards")
+    log(f"  {len(cards)} cards")
 
     rows, warnings = build_card_rows(cards, umas)
     skill_rows = build_skill_rows(skills)
     link_rows = build_card_skills(cards, umas)
     for w in warnings:
-        print(f"  ! {w}")
+        log(f"  ! {w}")
 
     rated = sum(1 for r in rows if r[-4])
     on_global = sum(1 for r in rows if r[7])
-    print(f"\n{len(rows)} cards, {on_global} released on Global, {rated} with a tier")
-    print(f"{len(skill_rows)} skills, {len(link_rows)} card-skill links")
+    summary = {
+        "cards": len(rows),
+        "global": on_global,
+        "tiered": rated,
+        "skills": len(skill_rows),
+        "links": len(link_rows),
+    }
+    log(f"{len(rows)} cards, {on_global} released on Global, {rated} with a tier")
+    log(f"{len(skill_rows)} skills, {len(link_rows)} card-skill links")
 
-    if args.dry_run:
-        print("\n--dry-run: nothing written")
-        return 0
+    if dry_run:
+        log("--dry-run: nothing written")
+        return summary
 
     conn = db.connect()
     with conn:
@@ -235,7 +243,15 @@ def main() -> int:
             ],
         )
     conn.close()
-    print(f"\nwrote {db.DB_PATH}")
+    log(f"wrote {db.DB_PATH}")
+    return summary
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Rebuild the uma reference database.")
+    ap.add_argument("--dry-run", action="store_true", help="fetch and report, write nothing")
+    args = ap.parse_args()
+    build(dry_run=args.dry_run)
     return 0
 
 
