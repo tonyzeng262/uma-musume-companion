@@ -223,33 +223,49 @@ with tab_roster:
                     st.warning("Not recognised: " + ", ".join(missing))
                 st.rerun()
     with bar[3]:
+        # A disabled popover still runs its body, so the empty-roster case has
+        # to be handled in here rather than left to `disabled`. With no options
+        # st.selectbox returns None, and roster.card(None) is None.
         with st.popover("Aptitudes", width="stretch", disabled=not owned):
-            st.caption(
-                "The database holds base aptitudes. Raised one through "
-                "inheritance? Override it so the optimizer uses your grade."
-            )
-            ov = roster.overrides(conn)
-            names = {cid: id_to_name.get(cid) or str(cid) for cid in owned}
-            target = st.selectbox("Uma", options=owned, format_func=lambda c: names[c])
-            row = roster.card(conn, target)
-            grid = st.columns(5)
-            for i, apt in enumerate(db.APTITUDES):
-                base = row[f"apt_{apt}"] or "G"
-                cur = ov.get(target, {}).get(apt, base)
-                with grid[i % 5]:
-                    new = st.selectbox(
-                        f"{apt.title()} ({base})",
-                        options=list(GRADES),
-                        index=list(GRADES).index(cur) if cur in GRADES
-                        else list(GRADES).index(base),
-                        key=f"ov_{target}_{apt}",
+            target = row = None
+            if not owned:
+                st.caption("Add some umas to your roster first.")
+            else:
+                st.caption(
+                    "The database holds base aptitudes. Raised one through "
+                    "inheritance? Override it so the optimizer uses your grade."
+                )
+                names = {cid: id_to_name.get(cid) or str(cid) for cid in owned}
+                target = st.selectbox(
+                    "Uma", options=owned, format_func=lambda c: names.get(c, str(c))
+                )
+                row = roster.card(conn, target) if target is not None else None
+                if row is None:
+                    st.warning(
+                        "That uma is not in the card database any more - "
+                        "re-save your roster to clear it."
                     )
-                    if new != cur:
-                        roster.set_override(conn, target, apt, None if new == base else new)
-                        st.rerun()
-            if st.button("Reset to base aptitudes", width="stretch"):
-                roster.clear_overrides(conn, target)
-                st.rerun()
+
+            if row is not None:
+                ov = roster.overrides(conn)
+                grid = st.columns(5)
+                for i, apt in enumerate(db.APTITUDES):
+                    base = row[f"apt_{apt}"] or "G"
+                    cur = ov.get(target, {}).get(apt, base)
+                    with grid[i % 5]:
+                        new = st.selectbox(
+                            f"{apt.title()} ({base})",
+                            options=list(GRADES),
+                            index=list(GRADES).index(cur) if cur in GRADES
+                            else list(GRADES).index(base),
+                            key=f"ov_{target}_{apt}",
+                        )
+                        if new != cur:
+                            roster.set_override(conn, target, apt, None if new == base else new)
+                            st.rerun()
+                if st.button("Reset to base aptitudes", width="stretch"):
+                    roster.clear_overrides(conn, target)
+                    st.rerun()
 
     picked = st.multiselect(
         "Your umas",
@@ -462,7 +478,10 @@ with tab_browse:
         if not rows:
             st.info("No umas match that filter.")
         else:
-            row = rows[picked_rows[0]] if picked_rows else rows[0]
+            # The selection survives a rerun, so a narrowed filter can leave an
+            # index pointing past the end of the shorter list.
+            index = picked_rows[0] if picked_rows else 0
+            row = rows[index] if 0 <= index < len(rows) else rows[0]
             top = st.columns([1, 3], vertical_alignment="center")
             with top[0]:
                 if row["image_url"]:
