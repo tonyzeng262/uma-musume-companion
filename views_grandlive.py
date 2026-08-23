@@ -46,14 +46,14 @@ def token_swatch(token: str) -> str:
     )
 
 
-def token_row(values: dict[str, int], caption: str, danger: bool = False) -> None:
+def token_row(values: dict[str, int], caption: str) -> None:
     """One line of five coloured token figures."""
     st.caption(caption)
     cols = st.columns(5)
     for col, token in zip(cols, gd.TOKENS):
         with col:
             value = values[token]
-            color = NEGATIVE if (danger and value < 0) else "inherit"
+            color = NEGATIVE if value < 0 else "inherit"
             st.markdown(
                 f"{token_swatch(token)}<span style='font-size:12px;color:#888'>"
                 f"{gd.TOKEN_LABELS[token]}</span><br>"
@@ -162,15 +162,27 @@ def render_run(conn: sqlite3.Connection) -> None:
         if not run.has_baseline:
             st.info("Enter your token counts above to start tracking spending.")
         else:
-            token_row(run.tokens, "Have now (baseline minus everything spent)", danger=True)
-            spent = run.spent_since_entry
+            spare = run.spare()
+            token_row(spare, "Spare for courses, after paying for every song worth buying")
+            hint = gd.COURSE_COST_HINT.get(run.live, 16)
+            total_spare = run.spare_total()
+            st.caption(
+                f"**{total_spare} tokens spare** - roughly "
+                f"{total_spare // hint} courses at the ~{hint} tokens this Live "
+                "expects. A negative figure is already borrowed from a song."
+            )
+
+            have, spent = run.tokens, run.spent_since_entry
+            st.caption(
+                "Balance now: "
+                + " · ".join(f"{gd.TOKEN_SHORT[t]} {have[t]}" for t in gd.TOKENS)
+                + f"  ({sum(have.values())} tokens)"
+            )
             if any(spent.values()):
                 st.caption(
                     "Spent since you entered it: "
-                    + ", ".join(
-                        f"**{v} {gd.TOKEN_LABELS[t]}**" for t, v in spent.items() if v
-                    )
-                    + f"  ({sum(spent.values())} tokens total)"
+                    + ", ".join(f"{v} {gd.TOKEN_LABELS[t]}" for t, v in spent.items() if v)
+                    + f"  ({sum(spent.values())} tokens)"
                 )
             else:
                 st.caption("Nothing spent since you entered it.")
@@ -178,11 +190,12 @@ def render_run(conn: sqlite3.Connection) -> None:
         short = run.shortfall()
         if any(short.values()):
             st.warning(
-                "Short by "
+                "Short for the songs by "
                 + ", ".join(f"{v} {gd.TOKEN_LABELS[t]}" for t, v in short.items() if v)
+                + " - do not spend these on courses."
             )
         elif run.has_baseline:
-            st.success("You can afford every song still worth buying.")
+            st.success("Every song still worth buying is covered. The spare above is yours to spend.")
         if run.overspent():
             st.error(
                 "A token count has gone negative. Either a purchase was logged "
@@ -204,8 +217,8 @@ def render_run(conn: sqlite3.Connection) -> None:
         with c1:
             st.markdown(f"**{song.name}**", unsafe_allow_html=True)
             label = f"Live {song.live} - {song.effect}"
-            if song.alt_name:
-                label += f"  ·  guide calls it “{song.alt_name}”"
+            if song.romaji:
+                label += f"  ·  JP: {song.romaji}"
             st.caption(label)
         with c2:
             st.markdown(cost_chips(song.cost_map()), unsafe_allow_html=True)

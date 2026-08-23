@@ -149,7 +149,72 @@ def main() -> int:
         run.live == 1 and not run.bought and not run.has_baseline and not run.ledger,
     )
 
-    # 7. Undo.
+    # 7. Spare-for-courses: what is left after covering every song worth
+    #    buying. This is the number courses should be paid out of.
+    spare_run = RunState()
+    need = spare_run.guide_requirement()          # Live 1: 67/21/53/49/68
+    spare_run.set_tokens({t: need[t] + 10 for t in gd.TOKENS})
+    ok &= check(
+        "spare is balance minus the guide requirement",
+        spare_run.spare() == {t: 10 for t in gd.TOKENS},
+        str(spare_run.spare()),
+    )
+    ok &= check("spare total sums the surplus", spare_run.spare_total() == 50)
+    ok &= check("nothing is short when spare is positive", not any(spare_run.shortfall().values()))
+
+    # Buying a song drops the requirement and the balance by the same amount,
+    # so the spare must not move.
+    before_spare = dict(spare_run.spare())
+    spare_run.buy_song("kiseki")
+    ok &= check(
+        "buying a song the guide wanted leaves spare unchanged",
+        spare_run.spare() == before_spare,
+        f"{spare_run.spare()} vs {before_spare}",
+    )
+
+    # A course, by contrast, comes straight out of the spare.
+    spare_run.take_course({"dance": 10})
+    ok &= check(
+        "a course comes out of the spare",
+        spare_run.spare()["dance"] == 0 and spare_run.spare()["vocal"] == 10,
+        str(spare_run.spare()),
+    )
+    ok &= check("spare total drops with it", spare_run.spare_total() == 40)
+
+    # Overspending on courses shows as negative spare and as a shortfall.
+    spare_run.take_course({"vocal": 25})
+    ok &= check("overspending shows negative spare", spare_run.spare()["vocal"] == -15)
+    ok &= check(
+        "shortfall mirrors the negative spare",
+        spare_run.shortfall()["vocal"] == 15 and spare_run.shortfall()["dance"] == 0,
+        str(spare_run.shortfall()),
+    )
+    ok &= check(
+        "a surplus elsewhere does not mask the shortfall",
+        spare_run.spare_total() == 30,
+        str(spare_run.spare_total()),
+    )
+
+    # 8. Song titles should be the ones an English account shows.
+    ok &= check(
+        "songs use Global English titles",
+        gd.BY_KEY["kiseki"].name == "Believe in Miracles!"
+        and gd.BY_KEY["runrun"].name == "Run n' Run!"
+        and gd.BY_KEY["seishun"].name == "Here Comes Our Time"
+        and gd.BY_KEY["takarabako"].name == "Precious Treasure Box",
+        gd.BY_KEY["kiseki"].name,
+    )
+    ok &= check(
+        "romaji titles are kept for cross-referencing",
+        gd.BY_KEY["kiseki"].romaji == "Kiseki wo Shinjite!"
+        and gd.BY_KEY["gothisway"].romaji is None,
+    )
+    ok &= check(
+        "no song title is left in romaji",
+        not [s for s in gd.SONGS if s.romaji and s.name == s.romaji],
+    )
+
+    # 9. Undo.
     run2 = RunState()
     run2.set_tokens({t: 100 for t in gd.TOKENS})
     run2.buy_song("zensoku")

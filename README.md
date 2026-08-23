@@ -129,7 +129,7 @@ each useful and always agree:
 | --- | --- |
 | **Entered** | the static figure you last typed in |
 | **Spent** | exactly what has gone out since then |
-| **Have now** | entered minus spent |
+| **Balance** | entered minus spent |
 
 Overwriting a balance would destroy *spent*, which is the number you actually
 want when deciding whether you can still afford what the guide is pushing you
@@ -137,9 +137,24 @@ toward. Re-entering your tokens just opens a fresh baseline, so correcting
 mid-run costs nothing and the purchase history survives. The whole ledger is
 visible in the app as an audit trail.
 
-Two "how much do I need" numbers are also kept apart: the **guide
-requirement** (what the songs still worth buying would cost, shrinking as you
-buy them) and your **actual tokens**. The gap is the shortfall.
+### Spare for courses
+
+The headline figure is not your balance but your **spare**: what is left after
+covering every song still worth buying.
+
+```
+spare = balance - guide requirement
+```
+
+That is the number courses should be paid out of, because the guide's rule is
+never to let a course purchase cost you a high-scoring song. Anything above
+zero is safe to spend; anything below is already borrowed from a song, and the
+app says so instead of letting it hide.
+
+It behaves the way you would want: buying a song the guide wanted drops the
+balance *and* the requirement by the same amount, so the spare does not move.
+Taking a course comes straight out of it. The total only counts positive
+tokens — a pile of spare Dance cannot pay for a course that wants Vocal.
 
 Songs never leave the pool until bought, so an unbought Live 1 song is still
 cluttering Live 4 — the "pool contamination" the guide warns about.
@@ -150,13 +165,27 @@ in `grand_live_history`; **Restart** wipes it. Every action is undoable.
 Token counts are never clamped: if one goes negative the app says so, because
 that means a purchase was double-logged or the baseline was stale.
 
-### A note on the fifth token
+### Naming follows the Global client
 
-GameTora calls the tokens Dance, Passion, Vocal, Visual and **Mental**,
-straight from the Japanese メンタル. Global localised that last one to
+Both data sources are Japan-first, so a few things needed translating for an
+English account.
+
+**The fifth token.** GameTora calls the tokens Dance, Passion, Vocal, Visual
+and *Mental*, straight from メンタル. Global localised that last one to
 **Composure**. The app uses the game's wording — Da / Pa / Vo / Vi / **Co** —
 with the in-game hexagon colours (blue, red, pink, yellow, violet). Saves
 written before this still load; `mental` is read as `composure`.
+
+**Song titles.** GameTora, and tracentrial's values page, list several songs
+under Japanese-derived names. The app shows the Global English titles (*Believe
+in Miracles!*, *Run n' Run!*, *Here Comes Our Time*, *Zero Is Where the Center
+Stands!* …) and keeps each song's `romaji` alongside, shown as a small "JP:"
+note, so a row can still be matched against either source. Titles come from
+tracentrial's Section 02 listing and Game8's Grand Concert song ranking.
+
+One caveat: *Getaway! Fallin' Love* was reconstructed from a source that
+truncated it mid-word. If the game shows something different, that one entry is
+the likeliest to be wrong.
 
 ### The song catalogue is cross-validated, not trusted
 

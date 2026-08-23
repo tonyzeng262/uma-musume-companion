@@ -268,9 +268,23 @@ class RunState:
         ]
         return dict(zip(gd.TOKENS, gd.requirement(fresh)))
 
-    def shortfall(self, threshold: float = 0.0) -> dict[str, int]:
+    def spare(self, threshold: float = 0.0) -> dict[str, int]:
+        """Tokens beyond what the songs still worth buying will cost.
+
+        This is the number to spend courses out of: the guide's rule is never
+        to let a course purchase cost you a high-scoring song, so anything
+        above zero here is safe and anything below is already borrowed.
+        """
         need, have = self.guide_requirement(threshold), self.tokens
-        return {t: max(0, need[t] - have[t]) for t in gd.TOKENS}
+        return {t: have[t] - need[t] for t in gd.TOKENS}
+
+    def spare_total(self, threshold: float = 0.0) -> int:
+        """Total safely spendable. Only positives count -- a surplus of Dance
+        cannot pay for a course that wants Vocal."""
+        return sum(v for v in self.spare(threshold).values() if v > 0)
+
+    def shortfall(self, threshold: float = 0.0) -> dict[str, int]:
+        return {t: -v if v < 0 else 0 for t, v in self.spare(threshold).items()}
 
     def can_afford(self, key: str) -> bool:
         have = self.tokens

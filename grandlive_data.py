@@ -17,6 +17,14 @@ independent ways:
 
 Both sources agreeing to the token on those figures is strong evidence the
 catalogue is right.
+
+Song titles are the **Global English** ones, since that is what the game shows
+on an English account. GameTora and tracentrial's values page both use
+Japanese-derived names for several songs, so each entry also keeps its `romaji`
+title for cross-referencing those sources. The English titles come from
+tracentrial's own Section 02 listing and from Game8's Grand Concert song
+ranking; "Getaway! Fallin' Love" is the one reconstructed from a truncated
+source, so check it against the game if it looks wrong.
 """
 
 from __future__ import annotations
@@ -76,8 +84,8 @@ class Song:
     """
 
     key: str
-    name: str            # GameTora's name -- what the game shows
-    alt_name: str | None  # tracentrial's English wording, when it differs
+    name: str             # the Global English title, as the game shows it
+    romaji: str | None    # GameTora's Japanese-derived name, when it differs
     live: int
     cost: tuple[int, int, int, int, int]
     effect: str
@@ -98,58 +106,60 @@ class Song:
 
 SONGS: tuple[Song, ...] = (
     # --- Live 1: available from the start ---------------------------------
-    Song("kiseki", "Kiseki wo Shinjite!", None, 1, (0, 21, 0, 0, 21),
-         "Extra Wisdom +1, Speciality Rate Up +5", 33.0),
-    Song("tachiichi", "Tachiichi zero-ban! Juni wa Ichiban!", None, 1, (21, 0, 0, 21, 0),
-         "Extra Speed +1, Support Event Chance Up Lv+1", 29.0),
-    Song("nigekiri", "Nigekiri! Fallin' Love", None, 1, (21, 0, 0, 21, 0),
-         "Extra Guts +1, Support Event Chance Up Lv+1", -5.0),
+    Song("kiseki", "Believe in Miracles!", "Kiseki wo Shinjite!", 1, (0, 21, 0, 0, 21),
+         "Training Wit Gain +1, Speciality Priority Up +5", 33.0),
+    Song("tachiichi", "Zero Is Where the Center Stands!",
+         "Tachiichi zero-ban! Juni wa Ichiban!", 1, (21, 0, 0, 21, 0),
+         "Training Speed Gain +1, Support Chain Event Frequency +1", 29.0),
+    Song("nigekiri", "Getaway! Fallin' Love", "Nigekiri! Fallin' Love", 1, (21, 0, 0, 21, 0),
+         "Training Guts Gain +1, Support Chain Event Frequency +1", -5.0),
     Song("gothisway", "Go This Way", None, 1, (0, 0, 21, 0, 21),
-         "Extra Power +1, Support Event Chance Up Lv+1", 9.0),
+         "Training Power Gain +1, Support Chain Event Frequency +1", 9.0),
     Song("ringring", "Ring Ring Diary", None, 1, (0, 21, 0, 21, 0),
-         "Extra Stamina +1, Support Event Chance Up Lv+1", -5.0),
-    Song("seishun", "Seishun ga Matteru", None, 1, (0, 0, 32, 0, 12),
+         "Training Stamina Gain +1, Support Chain Event Frequency +1", -5.0),
+    Song("seishun", "Here Comes Our Time", "Seishun ga Matteru", 1, (0, 0, 32, 0, 12),
          "Power +22, Friendship Bonus +5%", 67.0),
-    Song("runrun", "RUN×RUN!", None, 1, (14, 0, 0, 16, 14),
+    Song("runrun", "Run n' Run!", "RUN×RUN!", 1, (14, 0, 0, 16, 14),
          "Skill Points +22, Friendship Bonus +5%", 54.0),
-    Song("zensoku", "Zensoku! Zenshin! Umadol Power☆", None, 1, (32, 0, 0, 12, 0),
+    Song("zensoku", "Full Speed Ahead! Umadol Power☆", "Zensoku! Zenshin! Umadol Power☆",
+         1, (32, 0, 0, 12, 0),
          "Speed +22, Friendship Bonus +5%", 65.0),
 
     # --- Live 2: added after the 1st Promotional Live ----------------------
-    Song("yumewokakeru", "Yume wo Kakeru!", "Run for Our Dream!", 2, (0, 21, 0, 21, 0),
-         "Extra Skill Points +2, Speciality Rate Up +5", 34.0),
-    Song("anone", "A・NO・NE", "Hey, Guess What!", 2, (42, 0, 0, 21, 0),
-         "Extra Guts +2, Speciality Rate Up +5", 0.5),
-    Song("bluebird", "Bokura no Bluebird Days", "Our Blue Bird Days", 2, (21, 0, 0, 42, 0),
-         "Extra Speed +2, Speciality Rate Up +5", 22.5),
+    Song("yumewokakeru", "Run for Our Dream!", "Yume wo Kakeru!", 2, (0, 21, 0, 21, 0),
+         "Training Skill Point Bonus +2, Speciality Priority Up +5", 34.0),
+    Song("anone", "Hey, Guess What!", "A・NO・NE", 2, (42, 0, 0, 21, 0),
+         "Training Guts Gain +2, Speciality Priority Up +5", 0.5),
+    Song("bluebird", "Our Blue Bird Days", "Bokura no Bluebird Days", 2, (21, 0, 0, 42, 0),
+         "Training Speed Gain +2, Speciality Priority Up +5", 22.5),
 
     # --- Live 3: added after the 2nd Promotional Live ----------------------
-    Song("growup", "Grow Up, Shine!", "Grow Up and Shine!", 3, (21, 0, 21, 0, 21),
-         "Extra Skill Points +3, Support Event Chance Up Lv+1", 0.0),
-    Song("komorebi", "Komorebi no Yell", "Sunbeam Cheer", 3, (0, 42, 0, 0, 21),
-         "Extra Wisdom +2, Support Event Chance Up Lv+1", -1.5),
-    Song("pyoitto", "Pyoitto ♪ Hallelujah!", "Hoppity Sunny Days♪", 3, (0, 42, 21, 0, 0),
-         "Extra Stamina +2, Speciality Rate Up +5", -6.0),
-    Song("nanairo", "Nanairo no Keshiki", "Seven Colors Scenery", 3, (0, 0, 21, 0, 42),
-         "Extra Power +2, Speciality Rate Up +5", 8.0),
+    Song("growup", "Grow Up and Shine!", "Grow Up, Shine!", 3, (21, 0, 21, 0, 21),
+         "Training Skill Point Bonus +3, Support Chain Event Frequency +1", 0.0),
+    Song("komorebi", "Sunbeam Cheer", "Komorebi no Yell", 3, (0, 42, 0, 0, 21),
+         "Training Wit Gain +2, Support Chain Event Frequency +1", -1.5),
+    Song("pyoitto", "Hoppity Sunny Days♪", "Pyoitto ♪ Hallelujah!", 3, (0, 42, 21, 0, 0),
+         "Training Stamina Gain +2, Speciality Priority Up +5", -6.0),
+    Song("nanairo", "Seven Colors Scenery", "Nanairo no Keshiki", 3, (0, 0, 21, 0, 42),
+         "Training Power Gain +2, Speciality Priority Up +5", 8.0),
 
     # --- Live 4: added after the 3rd Promotional Live ----------------------
-    Song("yumezora", "Yumezora", "Dream Sky", 4, (0, 22, 0, 0, 22),
-         "Wisdom +22, Friendship Bonus +5%", 29.0),
-    Song("presentmarch", "PRESENT MARCH♪", "Present March♪", 4, (0, 0, 22, 0, 22),
+    Song("yumezora", "Dream Sky", "Yumezora", 4, (0, 22, 0, 0, 22),
+         "Wit +22, Friendship Bonus +5%", 29.0),
+    Song("presentmarch", "Present March♪", "PRESENT MARCH♪", 4, (0, 0, 22, 0, 22),
          "Power +22, Friendship Bonus +5%", 29.0),
-    Song("takarabako", "Daisuki no Takarabako", "Precious Treasure Box", 4, (42, 0, 0, 26, 0),
+    Song("takarabako", "Precious Treasure Box", "Daisuki no Takarabako", 4, (42, 0, 0, 26, 0),
          "Speed +26, Friendship Bonus +10%", 36.0),
-    Song("sekai", "Sekai wa Bokura no Iinari Sa", "The World's at Our Whim", 4, (0, 32, 12, 0, 0),
+    Song("sekai", "The World's at Our Whim", "Sekai wa Bokura no Iinari Sa", 4, (0, 32, 12, 0, 0),
          "Stamina +22, Friendship Bonus +5%", 29.0),
-    Song("harusora", "Harusora BLUE", "Sky-Blue Spring", 4, (12, 0, 0, 32, 0),
+    Song("harusora", "Sky-Blue Spring", "Harusora BLUE", 4, (12, 0, 0, 32, 0),
          "Guts +22, Friendship Bonus +5%", 29.0),
-    Song("fanfare", "Fanfare for Future!", "Fanfare for the Future!", 4, (26, 0, 0, 42, 0),
+    Song("fanfare", "Fanfare for the Future!", "Fanfare for Future!", 4, (26, 0, 0, 42, 0),
          "Guts +26, Friendship Bonus +10%", 36.0),
 
     # --- Specials: granted, never bought from a lesson ---------------------
-    Song("makedebut", "Make debut!", None, 1, (0, 0, 0, 0, 0),
-         "All Tokens +10, Speciality Rate Up +5", None, special=True),
+    Song("makedebut", "Make Debut!", None, 1, (0, 0, 0, 0, 0),
+         "All Tokens +10, Speciality Priority Up +5", None, special=True),
     Song("girlslegend", "GIRLS' LEGEND U", None, 5, (0, 0, 0, 0, 0),
          "All Stats +10, Friendship Bonus +10%", None, special=True),
 )
