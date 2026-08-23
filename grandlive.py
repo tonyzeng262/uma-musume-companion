@@ -161,6 +161,15 @@ class RunState:
         else:
             self.live += 1
 
+    def goto_live(self, live: int) -> None:
+        """Jump straight to a Live -- for fixing a mis-click, mostly."""
+        live = max(1, min(LAST_LIVE, int(live)))
+        if live == self.live:
+            return
+        self._snapshot()
+        self.live = live
+        self.finished = False
+
     def reset(self) -> None:
         self._snapshot()
         self.live = 1

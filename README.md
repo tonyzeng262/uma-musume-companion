@@ -45,6 +45,19 @@ If that becomes annoying, the fix is to move the four user tables (`roster`,
 hosted database — Turso/libSQL works well and `db.connect()` is the only place
 that would need to change.
 
+## Layout
+
+Every tab is a dashboard that fits a 1280x800 window with no page scrolling —
+measured, not eyeballed. Long content lives in fixed-height panes that scroll
+internally, or in popovers, so nothing you need mid-run is below the fold.
+
+The run tracker is a status strip (Live stepper, songs, spare, courses,
+End Live / Undo / More) over three columns: **your tokens**, **the songs**,
+**your courses**. Tokens and course costs are entered as one line of five
+numbers in `Da Pa Vo Vi Co` order — `90 45 70 65 85` — rather than five
+spinners. The team board puts one race category per column, so all fifteen
+umas are visible at once.
+
 ## Tabs
 
 | tab | what it does |

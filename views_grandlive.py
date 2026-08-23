@@ -1,7 +1,15 @@
-"""The Grand Live run tracker, song value board, and guide reader."""
+"""The Grand Live run tracker, song value board, and guide reader.
+
+The run tracker is laid out as a dashboard rather than a page: a status strip
+across the top, then three columns that each own one job -- your tokens, the
+songs, your courses. Anything long (the song pool, the course log, the guide
+text, the ledger) lives in a fixed-height pane or a popover, so the page itself
+never grows and nothing you need mid-run is below the fold.
+"""
 
 from __future__ import annotations
 
+import re
 import sqlite3
 
 import pandas as pd
@@ -15,6 +23,13 @@ NEGATIVE = "#c1373a"
 NEUTRAL = "#8a8a8a"
 TOKEN_COLOR = gd.TOKEN_COLOR
 
+# Heights chosen so the whole tracker fits a 1280x800 window without the page
+# scrolling; the panes scroll internally instead.
+SONG_PANE = 330
+SIDE_PANE = 190
+
+
+# --- small rendering helpers ---------------------------------------------
 
 def value_color(net: float | None) -> str:
     if net is None:
@@ -28,38 +43,31 @@ def value_color(net: float | None) -> str:
     return NEGATIVE
 
 
+def chip(text: str, bg: str, dim: bool = False) -> str:
+    return (
+        f"<span style='display:inline-block;margin:1px 3px 1px 0;padding:1px 7px;"
+        f"border-radius:9px;background:{bg};color:#fff;font-size:11px;"
+        f"white-space:nowrap;opacity:{0.35 if dim else 1}'>{text}</span>"
+    )
+
+
 def cost_chips(cost: dict[str, int]) -> str:
     parts = [
-        f"<span style='display:inline-block;margin:1px 4px 1px 0;padding:1px 8px;"
-        f"border-radius:9px;background:{TOKEN_COLOR[t]};color:#fff;font-size:11px'>"
-        f"{gd.TOKEN_SHORT[t]} {v}</span>"
-        for t, v in cost.items()
-        if v
+        chip(f"{gd.TOKEN_SHORT[t]} {v}", TOKEN_COLOR[t]) for t, v in cost.items() if v
     ]
     return "".join(parts) or "<span style='color:#888;font-size:11px'>free</span>"
 
 
-def token_swatch(token: str) -> str:
-    return (
-        f"<span style='display:inline-block;width:9px;height:9px;border-radius:2px;"
-        f"background:{TOKEN_COLOR[token]};margin-right:5px'></span>"
+def token_chips(values: dict[str, int]) -> str:
+    """All five tokens on one line, negatives flipped to red."""
+    return "".join(
+        chip(
+            f"{gd.TOKEN_SHORT[t]} {values[t]}",
+            NEGATIVE if values[t] < 0 else TOKEN_COLOR[t],
+            dim=values[t] == 0,
+        )
+        for t in gd.TOKENS
     )
-
-
-def token_row(values: dict[str, int], caption: str) -> None:
-    """One line of five coloured token figures."""
-    st.caption(caption)
-    cols = st.columns(5)
-    for col, token in zip(cols, gd.TOKENS):
-        with col:
-            value = values[token]
-            color = NEGATIVE if value < 0 else "inherit"
-            st.markdown(
-                f"{token_swatch(token)}<span style='font-size:12px;color:#888'>"
-                f"{gd.TOKEN_LABELS[token]}</span><br>"
-                f"<span style='font-size:22px;font-weight:600;color:{color}'>{value}</span>",
-                unsafe_allow_html=True,
-            )
 
 
 def net_badge(net: float | None) -> str:
@@ -67,9 +75,36 @@ def net_badge(net: float | None) -> str:
         return ""
     sign = "+" if net > 0 else ""
     return (
-        f"<span style='display:inline-block;padding:1px 9px;border-radius:4px;"
-        f"background:{value_color(net)};color:#fff;font-weight:700;font-size:12px'>"
+        f"<span style='display:inline-block;padding:1px 8px;border-radius:4px;"
+        f"background:{value_color(net)};color:#fff;font-weight:700;font-size:11px'>"
         f"{sign}{net:g}</span>"
+    )
+
+
+def stat(label: str, value, color: str | None = None, note: str = "") -> None:
+    st.markdown(
+        f"<div style='line-height:1.2'>"
+        f"<span style='font-size:10px;color:#888;text-transform:uppercase;"
+        f"letter-spacing:.09em'>{label}</span><br>"
+        f"<span style='font-size:20px;font-weight:600;color:{color or 'inherit'}'>{value}</span>"
+        f"<span style='font-size:11px;color:#888'> {note}</span></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def parse_tokens(text: str) -> dict[str, int] | None:
+    """Read 'Da Pa Vo Vi Co' from one line: '80 40 60 60 80' or '80/40/60/60/80'."""
+    found = re.findall(r"-?\d+", text or "")
+    if len(found) != len(gd.TOKENS):
+        return None
+    return dict(zip(gd.TOKENS, (int(n) for n in found)))
+
+
+def token_legend() -> str:
+    return " ".join(
+        f"<span style='color:{TOKEN_COLOR[t]};font-weight:700;font-size:11px'>"
+        f"{gd.TOKEN_SHORT[t]}</span>"
+        for t in gd.TOKENS
     )
 
 
@@ -82,299 +117,314 @@ def render_run(conn: sqlite3.Connection) -> None:
         gl.save(conn, run)
         st.rerun()
 
-    if run.finished:
-        st.success("Run finished. Archive it or start a fresh one below.")
+    _header(conn, run, commit)
+    left, mid, right = st.columns([1.05, 1.55, 1.05], gap="medium")
+    with left:
+        _tokens_panel(run, commit)
+    with mid:
+        _songs_panel(run, commit)
+    with right:
+        _courses_panel(run, commit)
 
-    head, controls = st.columns([3, 2])
-    with head:
-        st.subheader(gd.LIVE_LABELS[run.live])
-        guide = conn.execute(
+
+def _header(conn: sqlite3.Connection, run: gl.RunState, commit) -> None:
+    cols = st.columns([2.5, 1.15, 1.15, 1.3, 2.1], vertical_alignment="center")
+
+    with cols[0]:
+        picked = st.segmented_control(
+            "Live",
+            options=list(gd.LIVE_LABELS),
+            default=run.live,
+            format_func=lambda n: f"Live {n}",
+            key="live_pick",
+            label_visibility="collapsed",
+        )
+        if picked and picked != run.live:
+            run.goto_live(picked)
+            commit()
+        block = conn.execute(
             "SELECT refresh FROM guide_live WHERE live = ?", (run.live,)
         ).fetchone()
-        if guide and guide["refresh"]:
-            st.caption(f"Lesson refresh pattern: **{guide['refresh']}**")
-    with controls:
-        c1, c2 = st.columns(2)
-        with c1:
-            label = "Finish run" if run.live >= gl.LAST_LIVE else f"End Live {run.live}"
+        if block and block["refresh"]:
+            st.caption(f"Refresh pattern {block['refresh']}")
+
+    with cols[1]:
+        target = gd.GRAND_SUCCESS_SONGS
+        stat(
+            "Songs",
+            f"{run.songs_learned}",
+            POSITIVE if run.on_track_for_grand_success else None,
+            f"/ {target}",
+        )
+    with cols[2]:
+        spare = run.spare_total() if run.has_baseline else 0
+        short = any(run.shortfall().values())
+        stat("Spare", spare if run.has_baseline else "--",
+             NEGATIVE if short else POSITIVE if run.has_baseline else None)
+    with cols[3]:
+        if run.finished:
+            stat("Status", "Done", POSITIVE)
+        else:
+            stat("Courses", run.courses_this_live, note="this Live")
+
+    with cols[4]:
+        b = st.columns(3)
+        with b[0]:
+            label = "Finish" if run.live >= gl.LAST_LIVE else "End Live"
             if st.button(label, type="primary", width="stretch"):
                 run.advance_live()
                 commit()
-        with c2:
+        with b[1]:
             if st.button("Undo", width="stretch", disabled=not run.can_undo):
                 run.undo()
                 commit()
+        with b[2]:
+            with st.popover("More", width="stretch"):
+                _guide_text(conn, run)
+                st.divider()
+                _ledger(run)
+                st.divider()
+                if st.button("Restart run", width="stretch"):
+                    run.reset()
+                    commit()
+                if st.button("Archive and restart", width="stretch"):
+                    gl.archive(conn, run, "completed" if run.finished else "gave up")
+                    run.reset()
+                    commit()
+                past = gl.history(conn, limit=99)
+                st.caption(f"{len(past)} archived runs" if past else "No archived runs yet.")
 
-    songs_note = (
-        f"{run.songs_learned} songs learned (including the 2 free ones). "
-        f"Grand Success needs {gd.GRAND_SUCCESS_SONGS}."
-    )
-    (st.success if run.on_track_for_grand_success else st.info)(songs_note)
 
-    st.divider()
+def _tokens_panel(run: gl.RunState, commit) -> None:
+    st.markdown("###### Your tokens")
+    stamp = len(run.ledger)
+    with st.form("tokens", border=False):
+        st.markdown(
+            f"<span style='font-size:11px;color:#888'>Order: </span>{token_legend()}",
+            unsafe_allow_html=True,
+        )
+        raw = st.text_input(
+            "Tokens",
+            value=" ".join(str(run.entered[t]) for t in gd.TOKENS) if run.has_baseline else "",
+            placeholder="80 40 60 60 80",
+            label_visibility="collapsed",
+            key=f"tokraw_{stamp}",
+        )
+        if st.form_submit_button("Save as my balance", type="primary", width="stretch"):
+            parsed = parse_tokens(raw)
+            if parsed is None:
+                st.error("Give me five numbers, in Da Pa Vo Vi Co order.")
+            else:
+                run.set_tokens(parsed)
+                commit()
 
-    # --- coins ------------------------------------------------------------
-    need_new = run.new_this_live_requirement()
-    need_all = run.guide_requirement()
+    if not run.has_baseline:
+        st.caption("Type the five numbers off your lesson screen to start tracking.")
+        st.markdown("**Need for songs**")
+        st.markdown(token_chips(run.guide_requirement()), unsafe_allow_html=True)
+        return
 
-    left, right = st.columns(2)
-    with left:
-        st.markdown("#### What the guide says you need")
-        token_row(need_new, f"Songs worth buying that are new in Live {run.live}")
-        if sum(need_all.values()) != sum(need_new.values()):
-            st.write("")
-            token_row(need_all, "Everything still worth buying, including carry-overs")
+    spare = run.spare()
+    hint = gd.COURSE_COST_HINT.get(run.live, 16)
+    total = run.spare_total()
+    st.markdown("**Spare for courses**")
+    st.markdown(token_chips(spare), unsafe_allow_html=True)
+    st.caption(f"{total} spare - about {total // hint} courses at ~{hint} each")
+
+    short = run.shortfall()
+    if any(short.values()):
+        st.markdown(
+            f"<span style='color:{NEGATIVE};font-size:12px'>Short "
+            + ", ".join(f"{v} {gd.TOKEN_SHORT[t]}" for t, v in short.items() if v)
+            + " - spending these costs you a song.</span>",
+            unsafe_allow_html=True,
+        )
+
+    with st.expander("Balance and spending"):
+        st.caption("Have now")
+        st.markdown(token_chips(run.tokens), unsafe_allow_html=True)
+        st.caption("Need for the songs still worth buying")
+        st.markdown(token_chips(run.guide_requirement()), unsafe_allow_html=True)
+        spent = run.spent_since_entry
+        st.caption(f"Spent since you entered it ({sum(spent.values())})")
+        st.markdown(token_chips(spent), unsafe_allow_html=True)
         quoted = gd.TRACENTRIAL_REQUIREMENTS.get(run.live)
         if quoted:
-            st.caption(
-                "tracentrial quotes "
-                + " / ".join(str(v) for v in quoted)
-                + " for this Live at full pool."
-            )
+            st.caption("Guide quotes " + " / ".join(str(v) for v in quoted) + " at full pool.")
+    if run.overspent():
+        st.error("A token has gone negative - re-enter your balance or undo.", icon="!")
 
-    with right:
-        st.markdown("#### What you actually have")
-        # The widget key carries the ledger length so the boxes re-initialise
-        # from the saved baseline after any action -- otherwise Streamlit keeps
-        # showing whatever was typed last, which would drift from the truth.
-        stamp = len(run.ledger)
-        with st.form("tokens"):
-            st.caption(
-                "Type what the game is showing you. It is saved as a fixed "
-                "baseline; songs and courses are then subtracted from it."
-            )
-            cols = st.columns(5)
-            entered = {}
-            for col, token in zip(cols, gd.TOKENS):
-                with col:
-                    entered[token] = st.number_input(
-                        gd.TOKEN_LABELS[token],
-                        min_value=0,
-                        max_value=9999,
-                        value=int(run.entered[token]),
-                        step=1,
-                        key=f"tok_{token}_{stamp}",
-                    )
-            if st.form_submit_button("Save as my current balance", width="stretch"):
-                run.set_tokens(entered)
-                commit()
 
-        if not run.has_baseline:
-            st.info("Enter your token counts above to start tracking spending.")
-        else:
-            spare = run.spare()
-            token_row(spare, "Spare for courses, after paying for every song worth buying")
-            hint = gd.COURSE_COST_HINT.get(run.live, 16)
-            total_spare = run.spare_total()
-            st.caption(
-                f"**{total_spare} tokens spare** - roughly "
-                f"{total_spare // hint} courses at the ~{hint} tokens this Live "
-                "expects. A negative figure is already borrowed from a song."
-            )
+def _songs_panel(run: gl.RunState, commit) -> None:
+    head = st.columns([2, 1.5], vertical_alignment="center")
+    with head[0]:
+        st.markdown("###### Songs you can buy")
+    with head[1]:
+        show_all = st.toggle("Show all", value=False, key="song_all",
+                             help="Off shows only songs the guide rates positively.")
 
-            have, spent = run.tokens, run.spent_since_entry
-            st.caption(
-                "Balance now: "
-                + " · ".join(f"{gd.TOKEN_SHORT[t]} {have[t]}" for t in gd.TOKENS)
-                + f"  ({sum(have.values())} tokens)"
-            )
-            if any(spent.values()):
-                st.caption(
-                    "Spent since you entered it: "
-                    + ", ".join(f"{v} {gd.TOKEN_LABELS[t]}" for t, v in spent.items() if v)
-                    + f"  ({sum(spent.values())} tokens)"
-                )
-            else:
-                st.caption("Nothing spent since you entered it.")
-
-        short = run.shortfall()
-        if any(short.values()):
-            st.warning(
-                "Short for the songs by "
-                + ", ".join(f"{v} {gd.TOKEN_LABELS[t]}" for t, v in short.items() if v)
-                + " - do not spend these on courses."
-            )
-        elif run.has_baseline:
-            st.success("Every song still worth buying is covered. The spare above is yours to spend.")
-        if run.overspent():
-            st.error(
-                "A token count has gone negative. Either a purchase was logged "
-                "twice, or the baseline was stale -- use Undo, or re-enter what "
-                "the game is showing to start a fresh baseline."
-            )
-
-    st.divider()
-
-    # --- songs ------------------------------------------------------------
-    st.markdown("#### Songs available now")
-    st.caption(
-        "Sorted by the guide's net value. Buying one subtracts its cost from "
-        "both your tokens and the requirement above."
-    )
     pool = sorted(run.pool(), key=lambda s: -(s.net_value or 0))
-    for song in pool:
-        c1, c2, c3, c4 = st.columns([4, 3, 2, 1.4])
-        with c1:
-            st.markdown(f"**{song.name}**", unsafe_allow_html=True)
-            label = f"Live {song.live} - {song.effect}"
-            if song.romaji:
-                label += f"  ·  JP: {song.romaji}"
-            st.caption(label)
-        with c2:
-            st.markdown(cost_chips(song.cost_map()), unsafe_allow_html=True)
-            st.caption(f"{song.total_cost} tokens total")
-        with c3:
-            st.markdown(net_badge(song.net_value), unsafe_allow_html=True)
-        with c4:
-            afford = run.can_afford(song.key)
-            if st.button(
-                "Buy" if afford else "Buy anyway",
-                key=f"buy_{song.key}",
-                width="stretch",
-                type="primary" if afford and (song.net_value or 0) > 20 else "secondary",
-            ):
-                run.buy_song(song.key)
-                commit()
+    shown = pool if show_all else [s for s in pool if (s.net_value or 0) > 0]
+    skipped = len(pool) - len(shown)
 
-    if run.bought:
-        with st.expander(f"Bought this run ({len(run.bought)})"):
-            for key in run.bought:
-                song = gd.BY_KEY[key]
-                c1, c2 = st.columns([5, 1])
-                c1.markdown(
-                    f"**{song.name}** - {song.effect}  {net_badge(song.net_value)}",
+    with st.container(height=SONG_PANE, border=True):
+        if not shown:
+            st.caption("Nothing left worth buying in this pool.")
+        for song in shown:
+            row = st.columns([3.4, 2.3, 0.8, 1.15], vertical_alignment="center")
+            with row[0]:
+                st.markdown(
+                    f"<span style='font-size:13px;font-weight:600'>{song.name}</span><br>"
+                    f"<span style='font-size:10px;color:#888'>L{song.live} · {song.effect}</span>",
                     unsafe_allow_html=True,
                 )
-                if c2.button("Refund", key=f"unbuy_{key}", width="stretch"):
+            with row[1]:
+                st.markdown(cost_chips(song.cost_map()), unsafe_allow_html=True)
+            with row[2]:
+                st.markdown(net_badge(song.net_value), unsafe_allow_html=True)
+            with row[3]:
+                afford = run.can_afford(song.key) if run.has_baseline else True
+                if st.button(
+                    "Buy" if afford else "Buy!",
+                    key=f"buy_{song.key}",
+                    width="stretch",
+                    type="primary" if afford and (song.net_value or 0) > 20 else "secondary",
+                    help=None if afford else "You cannot afford this yet.",
+                ):
+                    run.buy_song(song.key)
+                    commit()
+
+    foot = st.columns([2, 1.4], vertical_alignment="center")
+    with foot[0]:
+        if skipped:
+            st.caption(f"{skipped} negative-value songs hidden - leave them to keep the pool clean.")
+        else:
+            st.caption(f"{len(pool)} songs in the pool.")
+    with foot[1]:
+        with st.popover(f"Bought ({len(run.bought)})", width="stretch"):
+            if not run.bought:
+                st.caption("Nothing bought yet this run.")
+            for key in run.bought:
+                song = gd.BY_KEY[key]
+                c = st.columns([3, 1])
+                c[0].markdown(
+                    f"<span style='font-size:12px'>{song.name}</span> {net_badge(song.net_value)}",
+                    unsafe_allow_html=True,
+                )
+                if c[1].button("Refund", key=f"unbuy_{key}", width="stretch"):
                     run.unbuy_song(key)
                     commit()
 
-    st.divider()
 
-    # --- courses ----------------------------------------------------------
-    st.markdown("#### Live Technique courses")
+def _courses_panel(run: gl.RunState, commit) -> None:
+    st.markdown("###### Live Technique courses")
     hint = gd.COURSE_COST_HINT.get(run.live, 16)
-    st.caption(
-        f"Enter what the course actually cost you. The guide expects roughly "
-        f"{hint} tokens per course in this Live, and warns against courses "
-        f"above that -- and against PT courses entirely."
-    )
-    with st.form("course", clear_on_submit=True):
-        cols = st.columns(6)
-        spend = {}
-        for col, token in zip(cols, gd.TOKENS):
-            with col:
-                spend[token] = st.number_input(
-                    gd.TOKEN_LABELS[token], min_value=0, max_value=999, value=0,
-                    step=1, key=f"course_{token}",
-                )
-        with cols[5]:
-            note = st.text_input("Note", value="", key="course_note")
-        if st.form_submit_button("Take this course", width="stretch"):
-            if sum(spend.values()) == 0:
-                st.warning("Enter the token cost first.")
+    with st.form("course", clear_on_submit=True, border=False):
+        st.markdown(
+            f"<span style='font-size:11px;color:#888'>Cost: </span>{token_legend()}",
+            unsafe_allow_html=True,
+        )
+        raw = st.text_input(
+            "Course cost",
+            placeholder=f"0 0 {hint} 0 0",
+            label_visibility="collapsed",
+            key="course_raw",
+        )
+        note = st.text_input("Note", placeholder="optional note", label_visibility="collapsed")
+        if st.form_submit_button("Log this course", width="stretch"):
+            parsed = parse_tokens(raw)
+            if parsed is None:
+                st.error("Five numbers, in Da Pa Vo Vi Co order.")
+            elif sum(parsed.values()) == 0:
+                st.warning("That course cost nothing - nothing logged.")
             else:
-                run.take_course(spend, note)
+                run.take_course(parsed, note)
                 commit()
 
     taken = [c for c in run.courses if c.live == run.live]
-    if taken:
-        st.caption(f"{len(taken)} courses taken in Live {run.live}")
-        st.dataframe(
-            pd.DataFrame(
-                [
-                    {gd.TOKEN_LABELS[t]: c.amounts[t] for t in gd.TOKENS}
-                    | {"Total": sum(c.amounts.values()), "Note": c.label}
-                    for c in taken
-                ]
-            ),
-            width="stretch",
-            hide_index=True,
-        )
+    spent_live = run.spent_in_live(run.live)
+    st.caption(
+        f"{len(taken)} this Live · {sum(spent_live.values())} tokens spent in Live {run.live}"
+    )
+    with st.container(height=SIDE_PANE, border=True):
+        if not taken:
+            st.caption("No courses logged in this Live yet.")
+        for i, course in enumerate(taken):
+            c = st.columns([3, 1], vertical_alignment="center")
+            with c[0]:
+                st.markdown(cost_chips(course.amounts), unsafe_allow_html=True)
+                if course.label:
+                    st.caption(course.label)
+            with c[1]:
+                if st.button("x", key=f"delcourse_{i}", width="stretch", help="Remove"):
+                    run.drop_course(run.courses.index(course))
+                    commit()
 
-    # --- audit trail ------------------------------------------------------
-    if run.ledger:
-        spent_live = run.spent_in_live(run.live)
-        with st.expander(
-            f"Everything logged this run ({len(run.ledger)} entries, "
-            f"{sum(spent_live.values())} tokens spent in Live {run.live})"
-        ):
-            st.caption(
-                "Newest first. Your balance is this list replayed from the most "
-                "recent entered figure, so nothing is edited in place."
-            )
-            for entry in run.recent:
-                amounts = ", ".join(
-                    f"{gd.TOKEN_SHORT[t]} {v}" for t, v in entry.amounts.items() if v
-                )
-                mark = "=" if entry.kind == gl.SET else "-"
-                st.markdown(
-                    f"`Live {entry.live}`  {run.describe(entry)}  "
-                    f"<span style='color:#888'>{mark} {amounts or 'nothing'}</span>",
-                    unsafe_allow_html=True,
-                )
 
-    # --- guide text for this Live ----------------------------------------
+def _guide_text(conn: sqlite3.Connection, run: gl.RunState) -> None:
     block = conn.execute("SELECT * FROM guide_live WHERE live = ?", (run.live,)).fetchone()
-    if block:
-        with st.expander(f"Guide advice for Live {run.live}", expanded=False):
-            for field, heading in (
-                ("song", "Song strategy"),
-                ("course", "Course strategy"),
-                ("purchase", "Purchase timing"),
-            ):
-                if block[field]:
-                    st.markdown(f"**{heading}**")
-                    st.write(block[field])
+    st.markdown(f"**Guide advice for Live {run.live}**")
+    if not block:
+        st.caption("No guide text imported.")
+        return
+    for field, heading in (
+        ("song", "Song strategy"),
+        ("course", "Course strategy"),
+        ("purchase", "Purchase timing"),
+    ):
+        if block[field]:
+            st.caption(heading)
+            st.markdown(f"<span style='font-size:13px'>{block[field]}</span>",
+                        unsafe_allow_html=True)
 
-    st.divider()
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        if st.button("Restart run (keep nothing)", width="stretch"):
-            run.reset()
-            commit()
-    with c2:
-        if st.button("Archive and restart", width="stretch"):
-            gl.archive(conn, run, "completed" if run.finished else "gave up")
-            run.reset()
-            commit()
-    with c3:
-        past = gl.history(conn, limit=1)
-        st.caption(f"{len(gl.history(conn, limit=99))} archived runs" if past else "No archived runs yet.")
+
+def _ledger(run: gl.RunState) -> None:
+    st.markdown(f"**Everything logged ({len(run.ledger)})**")
+    if not run.ledger:
+        st.caption("Nothing yet.")
+        return
+    with st.container(height=200, border=False):
+        for entry in run.recent:
+            amounts = ", ".join(
+                f"{gd.TOKEN_SHORT[t]} {v}" for t, v in entry.amounts.items() if v
+            )
+            mark = "=" if entry.kind == gl.SET else "-"
+            st.markdown(
+                f"<span style='font-size:12px'>`L{entry.live}` {run.describe(entry)} "
+                f"<span style='color:#888'>{mark} {amounts or 'nothing'}</span></span>",
+                unsafe_allow_html=True,
+            )
 
 
 # --- song value board -----------------------------------------------------
 
 def render_songs(conn: sqlite3.Connection) -> None:
-    st.subheader("Song values")
-    st.caption(
-        "Net value is tracentrial.org's estimate of the attribute points a song "
-        "returns for its cost, bought on time. Token costs are GameTora's "
-        "in-game numbers."
-    )
-    threshold = st.slider(
-        "Highlight songs worth at least this much", -10.0, 70.0, 20.0, 1.0,
-        help="Anything at or above this is marked as a priority buy.",
-    )
-
-    rows = []
-    for song in gd.SONGS:
-        if song.special:
-            continue
-        rows.append(
-            {
-                "Live": song.live,
-                "Song": song.name,
-                "Effect": song.effect,
-                **{gd.TOKEN_LABELS[t]: v for t, v in song.cost_map().items()},
-                "Total": song.total_cost,
-                "Net value": song.net_value,
-            }
+    head = st.columns([3, 2], vertical_alignment="center")
+    with head[0]:
+        st.markdown("###### Song values")
+        st.caption(
+            "Net value is tracentrial's estimate of the attribute points a song "
+            "returns for its cost. Token costs are GameTora's in-game numbers."
         )
-    frame = pd.DataFrame(rows).sort_values(["Live", "Net value"], ascending=[True, False])
+    with head[1]:
+        threshold = st.slider("Priority at or above", -10.0, 70.0, 20.0, 1.0)
+
+    rows = [
+        {
+            "Live": s.live,
+            "Song": s.name,
+            "Effect": s.effect,
+            **{gd.TOKEN_SHORT[t]: v for t, v in s.cost_map().items()},
+            "Total": s.total_cost,
+            "Net": s.net_value,
+        }
+        for s in gd.SONGS
+        if not s.special
+    ]
+    frame = pd.DataFrame(rows).sort_values(["Live", "Net"], ascending=[True, False])
 
     def highlight(row):
-        net = row["Net value"]
+        net = row["Net"]
         if net is None:
             return [""] * len(row)
         if net >= threshold:
@@ -383,42 +433,44 @@ def render_songs(conn: sqlite3.Connection) -> None:
             return ["background-color: rgba(193,55,58,0.14)"] * len(row)
         return [""] * len(row)
 
-    st.dataframe(
-        frame.style.apply(highlight, axis=1).format({"Net value": "{:+g}"}),
-        width="stretch",
-        hide_index=True,
-        height=640,
-    )
-
-    priority = [s for s in gd.SONGS if not s.special and (s.net_value or 0) >= threshold]
-    skip = [s for s in gd.SONGS if not s.special and (s.net_value or 0) < 0]
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown(f"**Priority buys ({len(priority)})**")
-        for s in priority:
-            st.markdown(
-                f"- Live {s.live} · **{s.name}** {net_badge(s.net_value)} · {s.total_cost} tokens",
-                unsafe_allow_html=True,
-            )
-    with c2:
-        st.markdown(f"**Negative value ({len(skip)})**")
-        for s in skip:
-            st.markdown(
-                f"- Live {s.live} · **{s.name}** {net_badge(s.net_value)}",
-                unsafe_allow_html=True,
-            )
-        st.caption(
-            "These are the songs the guide wants you to refresh past. Leaving "
-            "them unbought is what keeps the pool clean for later Lives."
+    body = st.columns([3, 1.5], gap="medium")
+    with body[0]:
+        st.dataframe(
+            frame.style.apply(highlight, axis=1).format({"Net": "{:+g}"}),
+            width="stretch",
+            hide_index=True,
+            height=430,
         )
+    with body[1]:
+        priority = [s for s in gd.SONGS if not s.special and (s.net_value or 0) >= threshold]
+        skip = [s for s in gd.SONGS if not s.special and (s.net_value or 0) < 0]
+        with st.container(height=430, border=True):
+            st.markdown(f"**Priority buys ({len(priority)})**")
+            for s in priority:
+                st.markdown(
+                    f"<span style='font-size:12px'>L{s.live} {s.name}</span> "
+                    f"{net_badge(s.net_value)}",
+                    unsafe_allow_html=True,
+                )
+            st.markdown(f"**Leave these ({len(skip)})**")
+            for s in skip:
+                st.markdown(
+                    f"<span style='font-size:12px'>L{s.live} {s.name}</span> "
+                    f"{net_badge(s.net_value)}",
+                    unsafe_allow_html=True,
+                )
+            st.caption(
+                "Refreshing past the negatives is what keeps the pool clean for "
+                "later Lives."
+            )
 
     with st.expander("Specials (granted, never bought)"):
         for s in gd.SONGS:
             if s.special:
                 st.markdown(f"- **{s.name}** - {s.effect}")
         st.caption(
-            f"GIRLS' LEGEND U unlocks by learning at least "
-            f"{gd.GIRLS_LEGEND_UNLOCK} songs before early December of the Senior year."
+            f"GIRLS' LEGEND U unlocks by learning at least {gd.GIRLS_LEGEND_UNLOCK} "
+            "songs before early December of the Senior year."
         )
 
 
@@ -426,18 +478,20 @@ def render_songs(conn: sqlite3.Connection) -> None:
 
 def render_guide(conn: sqlite3.Connection) -> None:
     sections = list(
-        conn.execute(
-            "SELECT * FROM guide_section WHERE body != '' ORDER BY position"
-        )
+        conn.execute("SELECT * FROM guide_section WHERE body != '' ORDER BY position")
     )
     if not sections:
         st.info("No guide text imported yet. Run `python guide_ingest.py`.")
         return
-    st.caption("Imported from tracentrial.org. Sections that are card tables rather than prose are not included.")
     labels = {f"{s['kicker']} - {s['title']}": s for s in sections}
-    picked = st.radio("Section", list(labels), label_visibility="collapsed")
+    picked = st.selectbox("Section", list(labels), label_visibility="collapsed")
     section = labels[picked]
-    st.subheader(section["title"])
+    st.markdown(f"###### {section['title']}")
     if section["lead"]:
         st.caption(section["lead"])
-    st.write(section["body"])
+    with st.container(height=430, border=True):
+        st.write(section["body"])
+    st.caption(
+        "Imported from tracentrial.org. Sections that are card tables rather "
+        "than prose are not included."
+    )

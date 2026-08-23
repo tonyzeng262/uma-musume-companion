@@ -40,6 +40,8 @@ STYLE_MULT = {"S": 1.10, "A": 1.00, "B": 0.85, "C": 0.75, "D": 0.60, "E": 0.40, 
 
 STYLES = ("front", "pace", "late", "end")
 STYLE_LABELS = {"front": "Front Runner", "pace": "Pace Chaser", "late": "Late Surger", "end": "End Closer"}
+# Short forms for chips, where the full label does not fit.
+STYLE_SHORT = {"front": "Front", "pace": "Pace", "late": "Late", "end": "End"}
 
 STATS = ("speed", "stamina", "power", "guts", "wit")
 
