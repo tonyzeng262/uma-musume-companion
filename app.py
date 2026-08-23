@@ -49,6 +49,13 @@ st.markdown(
       [data-testid="stMultiSelect"] div[data-baseweb="select"] > div:first-child
         {max-height: 118px; overflow-y: auto;}
       [data-testid="stElementToolbar"] {display: none;}
+      /* Five token boxes have to sit side by side in a third of the width, so
+         drop the +/- steppers: these are typed, never nudged. */
+      [data-testid="stNumberInputStepUp"],
+      [data-testid="stNumberInputStepDown"] {display: none !important;}
+      [data-testid="stNumberInput"] label {
+        font-size: 11px !important; margin-bottom: 0 !important; min-height: 0 !important;}
+      [data-testid="stNumberInput"] input {padding: 0.25rem 0.4rem !important; text-align: center;}
     </style>
     """,
     unsafe_allow_html=True,

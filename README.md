@@ -53,10 +53,11 @@ internally, or in popovers, so nothing you need mid-run is below the fold.
 
 The run tracker is a status strip (Live stepper, songs, spare, courses,
 End Live / Undo / More) over three columns: **your tokens**, **the songs**,
-**your courses**. Tokens and course costs are entered as one line of five
-numbers in `Da Pa Vo Vi Co` order — `90 45 70 65 85` — rather than five
-spinners. The team board puts one race category per column, so all fifteen
-umas are visible at once.
+**your courses**. Tokens and course costs each get five colour-labelled boxes
+(Da / Pa / Vo / Vi / Co) that default to zero, so logging a course that cost
+only Vocal means touching one field. The +/- steppers are hidden so all five
+fit side by side in a third of the width. The team board puts one race
+category per column, so all fifteen umas are visible at once.
 
 ## Tabs
 

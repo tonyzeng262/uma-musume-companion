@@ -9,7 +9,6 @@ never grows and nothing you need mid-run is below the fold.
 
 from __future__ import annotations
 
-import re
 import sqlite3
 
 import pandas as pd
@@ -92,20 +91,35 @@ def stat(label: str, value, color: str | None = None, note: str = "") -> None:
     )
 
 
-def parse_tokens(text: str) -> dict[str, int] | None:
-    """Read 'Da Pa Vo Vi Co' from one line: '80 40 60 60 80' or '80/40/60/60/80'."""
-    found = re.findall(r"-?\d+", text or "")
-    if len(found) != len(gd.TOKENS):
-        return None
-    return dict(zip(gd.TOKENS, (int(n) for n in found)))
+def token_inputs(
+    defaults: dict[str, int] | None = None,
+    key_prefix: str = "tok",
+    max_value: int = 9999,
+) -> dict[str, int]:
+    """Five side-by-side token boxes, colour-labelled Da / Pa / Vo / Vi / Co.
 
-
-def token_legend() -> str:
-    return " ".join(
-        f"<span style='color:{TOKEN_COLOR[t]};font-weight:700;font-size:11px'>"
-        f"{gd.TOKEN_SHORT[t]}</span>"
-        for t in gd.TOKENS
-    )
+    A course usually costs one or two token types, so these default to zero and
+    you only touch the ones you actually spent -- no filling in the blanks.
+    """
+    values: dict[str, int] = {}
+    cols = st.columns(5, gap="small")
+    for col, token in zip(cols, gd.TOKENS):
+        with col:
+            st.markdown(
+                f"<div style='text-align:center;font-size:11px;font-weight:700;"
+                f"color:{TOKEN_COLOR[token]};line-height:1'>{gd.TOKEN_SHORT[token]}</div>",
+                unsafe_allow_html=True,
+            )
+            values[token] = st.number_input(
+                gd.TOKEN_LABELS[token],
+                min_value=0,
+                max_value=max_value,
+                value=int((defaults or {}).get(token, 0)),
+                step=1,
+                key=f"{key_prefix}_{token}",
+                label_visibility="collapsed",
+            )
+    return values
 
 
 # --- the run tracker ------------------------------------------------------
@@ -197,26 +211,14 @@ def _header(conn: sqlite3.Connection, run: gl.RunState, commit) -> None:
 
 def _tokens_panel(run: gl.RunState, commit) -> None:
     st.markdown("###### Your tokens")
+    # The key stamp makes the boxes re-read the saved baseline after any action;
+    # otherwise Streamlit keeps showing whatever was typed last.
     stamp = len(run.ledger)
     with st.form("tokens", border=False):
-        st.markdown(
-            f"<span style='font-size:11px;color:#888'>Order: </span>{token_legend()}",
-            unsafe_allow_html=True,
-        )
-        raw = st.text_input(
-            "Tokens",
-            value=" ".join(str(run.entered[t]) for t in gd.TOKENS) if run.has_baseline else "",
-            placeholder="80 40 60 60 80",
-            label_visibility="collapsed",
-            key=f"tokraw_{stamp}",
-        )
+        entered = token_inputs(run.entered if run.has_baseline else None, f"tok{stamp}")
         if st.form_submit_button("Save as my balance", type="primary", width="stretch"):
-            parsed = parse_tokens(raw)
-            if parsed is None:
-                st.error("Give me five numbers, in Da Pa Vo Vi Co order.")
-            else:
-                run.set_tokens(parsed)
-                commit()
+            run.set_tokens(entered)
+            commit()
 
     if not run.has_baseline:
         st.caption("Type the five numbers off your lesson screen to start tracking.")
@@ -320,31 +322,20 @@ def _courses_panel(run: gl.RunState, commit) -> None:
     st.markdown("###### Live Technique courses")
     hint = gd.COURSE_COST_HINT.get(run.live, 16)
     with st.form("course", clear_on_submit=True, border=False):
-        st.markdown(
-            f"<span style='font-size:11px;color:#888'>Cost: </span>{token_legend()}",
-            unsafe_allow_html=True,
-        )
-        raw = st.text_input(
-            "Course cost",
-            placeholder=f"0 0 {hint} 0 0",
-            label_visibility="collapsed",
-            key="course_raw",
-        )
+        spend = token_inputs(key_prefix="course", max_value=999)
         note = st.text_input("Note", placeholder="optional note", label_visibility="collapsed")
         if st.form_submit_button("Log this course", width="stretch"):
-            parsed = parse_tokens(raw)
-            if parsed is None:
-                st.error("Five numbers, in Da Pa Vo Vi Co order.")
-            elif sum(parsed.values()) == 0:
-                st.warning("That course cost nothing - nothing logged.")
+            if sum(spend.values()) == 0:
+                st.warning("Fill in what the course cost first.")
             else:
-                run.take_course(parsed, note)
+                run.take_course(spend, note)
                 commit()
 
     taken = [c for c in run.courses if c.live == run.live]
     spent_live = run.spent_in_live(run.live)
     st.caption(
-        f"{len(taken)} this Live · {sum(spent_live.values())} tokens spent in Live {run.live}"
+        f"{len(taken)} this Live · {sum(spent_live.values())} tokens spent · "
+        f"guide expects ~{hint} per course"
     )
     with st.container(height=SIDE_PANE, border=True):
         if not taken:
