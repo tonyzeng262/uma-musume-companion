@@ -6,6 +6,7 @@ published independently of each other. Run: python test_grandlive.py
 
 from __future__ import annotations
 
+import json
 import sys
 
 import grandlive_data as gd
@@ -60,18 +61,38 @@ def main() -> int:
     ok &= check("bought songs leave the pool", len(pool4b) == 19, str(len(pool4b)))
     ok &= check("Live 1 pool has only Live 1 songs", len(gd.pool_at(1, set())) == 8)
 
-    # 5. Run tracker arithmetic.
+    # 5. The token names Global actually uses.
+    ok &= check("fifth token is Composure, not Mental", gd.TOKENS[4] == "composure")
+    ok &= check(
+        "token abbreviations are Da/Pa/Vo/Vi/Co",
+        [gd.TOKEN_SHORT[t] for t in gd.TOKENS] == ["Da", "Pa", "Vo", "Vi", "Co"],
+        str([gd.TOKEN_SHORT[t] for t in gd.TOKENS]),
+    )
+    ok &= check("every token has a colour", all(t in gd.TOKEN_COLOR for t in gd.TOKENS))
+
+    # 6. Run tracker arithmetic: the entered balance stays put, spending is
+    #    tracked against it, and "have now" is the two combined.
     run = RunState()
-    run.set_tokens({"dance": 100, "passion": 100, "vocal": 100, "visual": 100, "mental": 100})
-    before = dict(run.tokens)
-    song = gd.BY_KEY["kiseki"]  # 0 / 21 / 0 / 0 / 21
-    run.buy_song(song.key)
+    ok &= check("no baseline before anything is entered", not run.has_baseline)
+    run.set_tokens({t: 100 for t in gd.TOKENS})
+    ok &= check("entering a balance sets the baseline", run.has_baseline)
+
+    run.buy_song("kiseki")  # Pa 21, Co 21
     ok &= check(
         "buying a song debits the right tokens",
-        run.tokens["passion"] == before["passion"] - 21
-        and run.tokens["mental"] == before["mental"] - 21
-        and run.tokens["dance"] == before["dance"],
+        run.tokens["passion"] == 79 and run.tokens["composure"] == 79
+        and run.tokens["dance"] == 100,
         str(run.tokens),
+    )
+    ok &= check(
+        "the entered figure is not edited in place",
+        run.entered == {t: 100 for t in gd.TOKENS},
+        str(run.entered),
+    )
+    ok &= check(
+        "spending is tracked separately",
+        run.spent_since_entry["passion"] == 21 and run.spent_since_entry["dance"] == 0,
+        str(run.spent_since_entry),
     )
     ok &= check("bought song is recorded", "kiseki" in run.bought)
     ok &= check(
@@ -79,26 +100,56 @@ def main() -> int:
         gd.BY_KEY["kiseki"] not in run.remaining_targets(),
     )
 
-    run.take_course({"dance": 10})
-    ok &= check("a course debits tokens", run.tokens["dance"] == before["dance"] - 10)
+    run.take_course({"dance": 10}, "speed course")
+    ok &= check("a course debits tokens", run.tokens["dance"] == 90, str(run.tokens))
     ok &= check("courses are counted", run.courses_this_live == 1)
+    ok &= check(
+        "courses and songs both count as spending",
+        run.spent_since_entry["dance"] == 10 and run.spent_since_entry["passion"] == 21,
+        str(run.spent_since_entry),
+    )
+    ok &= check(
+        "have now == entered minus spent",
+        all(run.tokens[t] == run.entered[t] - run.spent_since_entry[t] for t in gd.TOKENS),
+    )
+
+    # Re-entering starts a fresh baseline without losing the purchase history.
+    run.set_tokens({t: 50 for t in gd.TOKENS})
+    ok &= check("re-entering resets the baseline", run.tokens["dance"] == 50, str(run.tokens))
+    ok &= check("nothing counted as spent yet", not any(run.spent_since_entry.values()))
+    ok &= check("purchases survive a re-entry", "kiseki" in run.bought)
+    ok &= check(
+        "lifetime spend still includes earlier purchases",
+        run.spent_total["passion"] == 21 and run.spent_total["dance"] == 10,
+        str(run.spent_total),
+    )
 
     run.advance_live()
     ok &= check("advancing moves to Live 2", run.live == 2)
     ok &= check("course count resets per Live", run.courses_this_live == 0)
     ok &= check("purchases persist across Lives", "kiseki" in run.bought)
 
-    # Tokens may legitimately go negative if you mis-enter; the tracker should
-    # report that rather than silently clamping.
+    # Tokens may legitimately go negative if you mis-enter; report, never clamp.
     run.set_tokens({t: 5 for t in gd.TOKENS})
-    run.buy_song("seishun")  # 0 / 0 / 32 / 0 / 12
-    ok &= check("overspend is visible, not clamped", run.tokens["vocal"] == 5 - 32, str(run.tokens))
+    run.buy_song("seishun")  # Vo 32, Co 12
+    ok &= check("overspend is visible, not clamped", run.tokens["vocal"] == -27, str(run.tokens))
     ok &= check("overspend is flagged", run.overspent(), "expected overspent() to be True")
 
-    run.reset()
-    ok &= check("reset clears the run", run.live == 1 and not run.bought and not any(run.tokens.values()))
+    # Refunds put the tokens back.
+    run.unbuy_song("seishun")
+    ok &= check(
+        "refunding a song restores the balance",
+        run.tokens["vocal"] == 5 and "seishun" not in run.bought,
+        str(run.tokens),
+    )
 
-    # 6. Undo.
+    run.reset()
+    ok &= check(
+        "reset clears the run",
+        run.live == 1 and not run.bought and not run.has_baseline and not run.ledger,
+    )
+
+    # 7. Undo.
     run2 = RunState()
     run2.set_tokens({t: 100 for t in gd.TOKENS})
     run2.buy_song("zensoku")
@@ -107,6 +158,27 @@ def main() -> int:
         "undo restores tokens and purchases",
         not run2.bought and run2.tokens["dance"] == 100,
         str(run2.tokens),
+    )
+
+    # 8. A version-1 save must migrate without double-charging.
+    legacy = {
+        "live": 2,
+        "tokens": {"dance": 40, "passion": 30, "vocal": 20, "visual": 10, "mental": 60},
+        "bought": ["kiseki"],
+        "courses": [{"live": 1, "cost": {"dance": 10}, "note": "old course"}],
+        "finished": False,
+    }
+    migrated = RunState.from_dict(legacy)
+    ok &= check(
+        "old saves keep their balance, with Mental read as Composure",
+        migrated.tokens == {"dance": 40, "passion": 30, "vocal": 20, "visual": 10, "composure": 60},
+        str(migrated.tokens),
+    )
+    ok &= check("old saves keep their purchases", migrated.bought == ["kiseki"])
+    ok &= check("old saves keep their courses", len(migrated.courses) == 1)
+    ok &= check(
+        "round-trips through JSON",
+        RunState.from_dict(json.loads(json.dumps(migrated.to_dict()))).tokens == migrated.tokens,
     )
 
     print("\nall good" if ok else "\nfailures above")

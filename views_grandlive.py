@@ -13,13 +13,7 @@ import grandlive_data as gd
 POSITIVE = "#2e7d4f"
 NEGATIVE = "#c1373a"
 NEUTRAL = "#8a8a8a"
-TOKEN_COLOR = {
-    "dance": "#e0457b",
-    "passion": "#ef7d2f",
-    "vocal": "#e5b53a",
-    "visual": "#4a9ad4",
-    "mental": "#7a6fd0",
-}
+TOKEN_COLOR = gd.TOKEN_COLOR
 
 
 def value_color(net: float | None) -> str:
@@ -38,11 +32,34 @@ def cost_chips(cost: dict[str, int]) -> str:
     parts = [
         f"<span style='display:inline-block;margin:1px 4px 1px 0;padding:1px 8px;"
         f"border-radius:9px;background:{TOKEN_COLOR[t]};color:#fff;font-size:11px'>"
-        f"{gd.TOKEN_LABELS[t][:2].upper()} {v}</span>"
+        f"{gd.TOKEN_SHORT[t]} {v}</span>"
         for t, v in cost.items()
         if v
     ]
     return "".join(parts) or "<span style='color:#888;font-size:11px'>free</span>"
+
+
+def token_swatch(token: str) -> str:
+    return (
+        f"<span style='display:inline-block;width:9px;height:9px;border-radius:2px;"
+        f"background:{TOKEN_COLOR[token]};margin-right:5px'></span>"
+    )
+
+
+def token_row(values: dict[str, int], caption: str, danger: bool = False) -> None:
+    """One line of five coloured token figures."""
+    st.caption(caption)
+    cols = st.columns(5)
+    for col, token in zip(cols, gd.TOKENS):
+        with col:
+            value = values[token]
+            color = NEGATIVE if (danger and value < 0) else "inherit"
+            st.markdown(
+                f"{token_swatch(token)}<span style='font-size:12px;color:#888'>"
+                f"{gd.TOKEN_LABELS[token]}</span><br>"
+                f"<span style='font-size:22px;font-weight:600;color:{color}'>{value}</span>",
+                unsafe_allow_html=True,
+            )
 
 
 def net_badge(net: float | None) -> str:
@@ -54,24 +71,6 @@ def net_badge(net: float | None) -> str:
         f"background:{value_color(net)};color:#fff;font-weight:700;font-size:12px'>"
         f"{sign}{net:g}</span>"
     )
-
-
-def token_table(title: str, values: dict[str, int], compare: dict[str, int] | None = None):
-    """Render a per-token row, optionally as 'have / need'."""
-    st.caption(title)
-    cols = st.columns(5)
-    for col, token in zip(cols, gd.TOKENS):
-        with col:
-            if compare is None:
-                st.metric(gd.TOKEN_LABELS[token], values[token])
-            else:
-                gap = compare[token] - values[token]
-                st.metric(
-                    gd.TOKEN_LABELS[token],
-                    values[token],
-                    delta=None if gap <= 0 else f"-{gap} short",
-                    delta_color="inverse",
-                )
 
 
 # --- the run tracker ------------------------------------------------------
@@ -121,15 +120,10 @@ def render_run(conn: sqlite3.Connection) -> None:
     left, right = st.columns(2)
     with left:
         st.markdown("#### What the guide says you need")
-        token_table(
-            f"Songs worth buying that are new in Live {run.live}",
-            need_new,
-        )
+        token_row(need_new, f"Songs worth buying that are new in Live {run.live}")
         if sum(need_all.values()) != sum(need_new.values()):
-            token_table(
-                "Everything still worth buying, including songs carried over",
-                need_all,
-            )
+            st.write("")
+            token_row(need_all, "Everything still worth buying, including carry-overs")
         quoted = gd.TRACENTRIAL_REQUIREMENTS.get(run.live)
         if quoted:
             st.caption(
@@ -140,38 +134,60 @@ def render_run(conn: sqlite3.Connection) -> None:
 
     with right:
         st.markdown("#### What you actually have")
+        # The widget key carries the ledger length so the boxes re-initialise
+        # from the saved baseline after any action -- otherwise Streamlit keeps
+        # showing whatever was typed last, which would drift from the truth.
+        stamp = len(run.ledger)
         with st.form("tokens"):
+            st.caption(
+                "Type what the game is showing you. It is saved as a fixed "
+                "baseline; songs and courses are then subtracted from it."
+            )
             cols = st.columns(5)
             entered = {}
             for col, token in zip(cols, gd.TOKENS):
                 with col:
                     entered[token] = st.number_input(
                         gd.TOKEN_LABELS[token],
-                        min_value=-999,
+                        min_value=0,
                         max_value=9999,
-                        value=int(run.tokens[token]),
+                        value=int(run.entered[token]),
                         step=1,
-                        key=f"tok_{token}",
+                        key=f"tok_{token}_{stamp}",
                     )
-            if st.form_submit_button("Update my tokens", width="stretch"):
+            if st.form_submit_button("Save as my current balance", width="stretch"):
                 run.set_tokens(entered)
                 commit()
+
+        if not run.has_baseline:
+            st.info("Enter your token counts above to start tracking spending.")
+        else:
+            token_row(run.tokens, "Have now (baseline minus everything spent)", danger=True)
+            spent = run.spent_since_entry
+            if any(spent.values()):
+                st.caption(
+                    "Spent since you entered it: "
+                    + ", ".join(
+                        f"**{v} {gd.TOKEN_LABELS[t]}**" for t, v in spent.items() if v
+                    )
+                    + f"  ({sum(spent.values())} tokens total)"
+                )
+            else:
+                st.caption("Nothing spent since you entered it.")
 
         short = run.shortfall()
         if any(short.values()):
             st.warning(
                 "Short by "
-                + ", ".join(
-                    f"{v} {gd.TOKEN_LABELS[t]}" for t, v in short.items() if v
-                )
+                + ", ".join(f"{v} {gd.TOKEN_LABELS[t]}" for t, v in short.items() if v)
             )
-        else:
+        elif run.has_baseline:
             st.success("You can afford every song still worth buying.")
         if run.overspent():
             st.error(
                 "A token count has gone negative. Either a purchase was logged "
-                "twice, or the entered totals were stale -- use Undo, or "
-                "re-enter what the game is showing."
+                "twice, or the baseline was stale -- use Undo, or re-enter what "
+                "the game is showing to start a fresh baseline."
             )
 
     st.divider()
@@ -254,14 +270,36 @@ def render_run(conn: sqlite3.Connection) -> None:
         st.dataframe(
             pd.DataFrame(
                 [
-                    {gd.TOKEN_LABELS[t]: c.cost[t] for t in gd.TOKENS}
-                    | {"Total": sum(c.cost.values()), "Note": c.note}
+                    {gd.TOKEN_LABELS[t]: c.amounts[t] for t in gd.TOKENS}
+                    | {"Total": sum(c.amounts.values()), "Note": c.label}
                     for c in taken
                 ]
             ),
             width="stretch",
             hide_index=True,
         )
+
+    # --- audit trail ------------------------------------------------------
+    if run.ledger:
+        spent_live = run.spent_in_live(run.live)
+        with st.expander(
+            f"Everything logged this run ({len(run.ledger)} entries, "
+            f"{sum(spent_live.values())} tokens spent in Live {run.live})"
+        ):
+            st.caption(
+                "Newest first. Your balance is this list replayed from the most "
+                "recent entered figure, so nothing is edited in place."
+            )
+            for entry in run.recent:
+                amounts = ", ".join(
+                    f"{gd.TOKEN_SHORT[t]} {v}" for t, v in entry.amounts.items() if v
+                )
+                mark = "=" if entry.kind == gl.SET else "-"
+                st.markdown(
+                    f"`Live {entry.live}`  {run.describe(entry)}  "
+                    f"<span style='color:#888'>{mark} {amounts or 'nothing'}</span>",
+                    unsafe_allow_html=True,
+                )
 
     # --- guide text for this Live ----------------------------------------
     block = conn.execute("SELECT * FROM guide_live WHERE live = ?", (run.live,)).fetchone()

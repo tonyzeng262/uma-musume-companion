@@ -1,7 +1,7 @@
 """The Our Grand Concert (Grand Live) song catalogue.
 
 Costs are in performance tokens, always in the order Dance, Passion, Vocal,
-Visual, Mental -- the column order GameTora uses on its scenario page
+Visual, Composure -- the column order GameTora uses on its scenario page
 (da/pa/vo/vi/me icons, confirmed from the page DOM).
 
 This table is curated rather than scraped: GameTora renders it as prose inside
@@ -23,13 +23,34 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-TOKENS = ("dance", "passion", "vocal", "visual", "mental")
+# The five performance tokens, in the column order GameTora uses on its
+# scenario page (da/pa/vo/vi/me icons, confirmed from the page DOM).
+#
+# Note the fifth: GameTora calls it "Mental", straight from the Japanese
+# メンタル, but Global localised it to **Composure**. The game's own wording
+# wins here, so the key, label and colour all say Composure.
+TOKENS = ("dance", "passion", "vocal", "visual", "composure")
 TOKEN_LABELS = {
     "dance": "Dance",
     "passion": "Passion",
     "vocal": "Vocal",
     "visual": "Visual",
-    "mental": "Mental",
+    "composure": "Composure",
+}
+TOKEN_SHORT = {
+    "dance": "Da",
+    "passion": "Pa",
+    "vocal": "Vo",
+    "visual": "Vi",
+    "composure": "Co",
+}
+# The in-game hexagon colours.
+TOKEN_COLOR = {
+    "dance": "#2f7fd4",      # blue
+    "passion": "#dc4340",    # red
+    "vocal": "#e35f9c",      # pink
+    "visual": "#d9a316",     # yellow
+    "composure": "#8258cc",  # violet
 }
 
 # GameTora's published grand total for practising every lesson song in one run.

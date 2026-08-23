@@ -109,21 +109,54 @@ score = w_apt   * 100 * (surface_mult * distance_mult * style_mult)
 ## The Grand Live run tracker
 
 Tracks one run: which Live you are in, the tokens you actually hold, the songs
-you have bought and the courses you have taken. Two numbers are kept apart:
+you have bought and the courses you have taken.
 
-* the **guide requirement** — what the songs still worth buying would cost;
-* your **actual tokens** — what you have right now.
+### Your balance is a ledger, not a number
 
-Buying a song debits both. Taking a course debits only your tokens. The gap
-between them is the shortfall, which is what the strategy guide is really
-about. Songs never leave the pool until bought, so an unbought Live 1 song is
-still cluttering Live 4 — the "pool contamination" the guide warns about.
+Nothing is ever edited in place. The run keeps an ordered ledger:
+
+```
+set     "the game is showing me these numbers right now"
+song    bought a song, at its known token cost
+course  took a Live Technique course, at the cost you typed in
+```
+
+Your balance is *derived* — take the most recent `set` as a fixed baseline,
+then subtract everything spent after it. That gives three figures that are
+each useful and always agree:
+
+| | |
+| --- | --- |
+| **Entered** | the static figure you last typed in |
+| **Spent** | exactly what has gone out since then |
+| **Have now** | entered minus spent |
+
+Overwriting a balance would destroy *spent*, which is the number you actually
+want when deciding whether you can still afford what the guide is pushing you
+toward. Re-entering your tokens just opens a fresh baseline, so correcting
+mid-run costs nothing and the purchase history survives. The whole ledger is
+visible in the app as an audit trail.
+
+Two "how much do I need" numbers are also kept apart: the **guide
+requirement** (what the songs still worth buying would cost, shrinking as you
+buy them) and your **actual tokens**. The gap is the shortfall.
+
+Songs never leave the pool until bought, so an unbought Live 1 song is still
+cluttering Live 4 — the "pool contamination" the guide warns about.
 
 Ending a Live advances the tracker; **Archive and restart** files the run away
 in `grand_live_history`; **Restart** wipes it. Every action is undoable.
 
 Token counts are never clamped: if one goes negative the app says so, because
-that means a purchase was double-logged or the entered totals were stale.
+that means a purchase was double-logged or the baseline was stale.
+
+### A note on the fifth token
+
+GameTora calls the tokens Dance, Passion, Vocal, Visual and **Mental**,
+straight from the Japanese メンタル. Global localised that last one to
+**Composure**. The app uses the game's wording — Da / Pa / Vo / Vi / **Co** —
+with the in-game hexagon colours (blue, red, pink, yellow, violet). Saves
+written before this still load; `mental` is read as `composure`.
 
 ### The song catalogue is cross-validated, not trusted
 
