@@ -102,23 +102,27 @@ def token_inputs(
     you only touch the ones you actually spent -- no filling in the blanks.
     """
     values: dict[str, int] = {}
-    cols = st.columns(5, gap="small")
-    for col, token in zip(cols, gd.TOKENS):
-        with col:
-            st.markdown(
-                f"<div style='text-align:center;font-size:11px;font-weight:700;"
-                f"color:{TOKEN_COLOR[token]};line-height:1'>{gd.TOKEN_SHORT[token]}</div>",
-                unsafe_allow_html=True,
-            )
-            values[token] = st.number_input(
-                gd.TOKEN_LABELS[token],
-                min_value=0,
-                max_value=max_value,
-                value=int((defaults or {}).get(token, 0)),
-                step=1,
-                key=f"{key_prefix}_{token}",
-                label_visibility="collapsed",
-            )
+    # The container key renders as a `st-key-tokengrid-*` class, which is the
+    # hook app.py uses to undo Streamlit's negative margin on markdown here --
+    # without it the input box is dragged up over the Da/Pa/Vo/Vi/Co labels.
+    with st.container(key=f"tokengrid-{key_prefix}"):
+        cols = st.columns(5, gap="small")
+        for col, token in zip(cols, gd.TOKENS):
+            with col:
+                st.markdown(
+                    f"<div style='text-align:center;font-size:11px;font-weight:700;"
+                    f"color:{TOKEN_COLOR[token]}'>{gd.TOKEN_SHORT[token]}</div>",
+                    unsafe_allow_html=True,
+                )
+                values[token] = st.number_input(
+                    gd.TOKEN_LABELS[token],
+                    min_value=0,
+                    max_value=max_value,
+                    value=int((defaults or {}).get(token, 0)),
+                    step=1,
+                    key=f"{key_prefix}_{token}",
+                    label_visibility="collapsed",
+                )
     return values
 
 

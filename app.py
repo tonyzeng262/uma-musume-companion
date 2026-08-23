@@ -56,6 +56,12 @@ st.markdown(
       [data-testid="stNumberInput"] label {
         font-size: 11px !important; margin-bottom: 0 !important; min-height: 0 !important;}
       [data-testid="stNumberInput"] input {padding: 0.25rem 0.4rem !important; text-align: center;}
+      /* Streamlit gives stMarkdownContainer a -16px bottom margin, which pulls
+         the next widget upward. Harmless for prose, but in the token grid it
+         dragged each input box over its Da/Pa/Vo/Vi/Co header. Undo it only
+         there, and leave a couple of px of breathing room. */
+      div[class*="st-key-tokengrid-"] [data-testid="stMarkdownContainer"] {
+        margin-bottom: 3px !important;}
     </style>
     """,
     unsafe_allow_html=True,
