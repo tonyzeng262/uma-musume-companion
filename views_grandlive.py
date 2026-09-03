@@ -149,10 +149,16 @@ def _header(conn: sqlite3.Connection, run: gl.RunState, commit) -> None:
     cols = st.columns([2.5, 1.15, 1.15, 1.3, 2.1], vertical_alignment="center")
 
     with cols[0]:
+        # The picker keeps its own state, so "End Live" (or Undo, or a restart)
+        # moving the run would leave a stale number sitting here -- and the
+        # goto_live below would read it back and drag the run straight to where
+        # it just came from. Push the run's Live in before the widget renders.
+        if st.session_state.get("live_shown") != run.live:
+            st.session_state["live_pick"] = run.live
+            st.session_state["live_shown"] = run.live
         picked = st.segmented_control(
             "Live",
             options=list(gd.LIVE_LABELS),
-            default=run.live,
             format_func=lambda n: f"Live {n}",
             key="live_pick",
             label_visibility="collapsed",
