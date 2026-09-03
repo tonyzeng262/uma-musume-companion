@@ -264,7 +264,7 @@ def _tokens_panel(run: gl.RunState, commit) -> None:
         if quoted:
             st.caption("Guide quotes " + " / ".join(str(v) for v in quoted) + " at full pool.")
     if run.overspent():
-        st.error("A token has gone negative - re-enter your balance or undo.", icon="!")
+        st.error("A token has gone negative - re-enter your balance or undo.", icon="⚠️")
 
 
 def _songs_panel(run: gl.RunState, commit) -> None:
